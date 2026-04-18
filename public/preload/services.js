@@ -9,6 +9,68 @@ window.services = {
   readFile(file) {
     return fs.readFileSync(file, { encoding: 'utf-8' })
   },
+
+  /**
+   * 将 file:// URI 转换为本地文件系统路径（内部用，Windows 反斜杠格式）
+   */
+  _uriToFileSystemPath(uri) {
+    if (!uri || typeof uri !== 'string') return uri
+
+    const match = uri.match(/^file:\/\/\/(.+)$/i)
+    if (match) {
+      let rest = match[1]
+      if (rest.startsWith('/')) rest = rest.slice(1)
+
+      const driveMatch = rest.match(/^([A-Za-z])(%3[Aa]|:)/i)
+      if (driveMatch) {
+        let drive = driveMatch[1].toUpperCase()
+        let pathPart = rest.slice(driveMatch[0].length)
+        if (pathPart.startsWith('/')) pathPart = pathPart.slice(1)
+        try { pathPart = decodeURIComponent(pathPart.replace(/\//g, '\\')) } catch {}
+        return drive + ':' + pathPart
+      }
+
+      try { return decodeURIComponent(rest.replace(/\//g, '\\')) } catch {}
+      return rest.replace(/\//g, '\\')
+    }
+
+    if (uri.includes('/')) {
+      try { return decodeURIComponent(uri).replace(/\//g, '\\') } catch {}
+    }
+    return uri
+  },
+
+  /**
+   * 将 file:// URI 转换为当前操作系统的标准路径格式
+   * 用于复制到剪贴板，路径分隔符符合当前 OS 规范
+   */
+  _uriToOSPath(uri) {
+    if (!uri || typeof uri !== 'string') return uri
+
+    const match = uri.match(/^file:\/\/\/(.+)$/i)
+    if (match) {
+      let rest = match[1]
+      if (rest.startsWith('/')) rest = rest.slice(1)
+
+      const driveMatch = rest.match(/^([A-Za-z])(%3[Aa]|:)/i)
+      if (driveMatch) {
+        let drive = driveMatch[1].toUpperCase()
+        let pathPart = rest.slice(driveMatch[0].length)
+        if (pathPart.startsWith('/')) pathPart = pathPart.slice(1)
+        try { pathPart = decodeURIComponent(pathPart) } catch {}
+        return drive + ':' + pathPart.split('/').join(path.sep)
+      }
+
+      try { return decodeURIComponent(rest) } catch {}
+      return rest
+    }
+
+    if (uri.includes('/')) {
+      try { return decodeURIComponent(uri).split('/').join(path.sep) } catch {}
+    }
+    return uri
+  },
+
   // 文本写入到下载目录
   writeTextFile(text) {
     const filePath = path.join(window.ztools.getPath('downloads'), Date.now().toString() + '.txt')
@@ -35,6 +97,9 @@ window.services = {
    * @returns {Promise<string[]>} 项目路径数组
    */
   async getVSCodeHistory(dbPath) {
+    if (!fs.existsSync(dbPath)) {
+      throw new Error(`数据库文件不存在: ${dbPath}`)
+    }
     console.log('[services] getVSCodeHistory start, dbPath:', dbPath)
     const SQL = await this._initSQL()
     const db = new SQL.Database(fs.readFileSync(dbPath))
@@ -58,43 +123,9 @@ window.services = {
     console.log('[services] extracted paths count:', paths.length)
 
     // 只保留文件夹路径
-    function uriToFileSystemPath(uri) {
-      if (!uri || typeof uri !== 'string') return uri
-
-      // 处理 file:// URI（VSCode 存储的格式）
-      const match = uri.match(/^file:\/\/\/(.+)$/i)
-      if (match) {
-        let rest = match[1]
-
-        // 移除开头的 /（如果有的话）
-        if (rest.startsWith('/')) rest = rest.slice(1)
-
-        // 处理盘符 C: 或 C%3A（VSCode 可能编码冒号为 %3A）
-        const driveMatch = rest.match(/^([A-Za-z])(%3[Aa]|:)/i)
-        if (driveMatch) {
-          let drive = driveMatch[1].toUpperCase()
-          let pathPart = rest.slice(driveMatch[0].length)
-          // 移除 pathPart 开头的 /
-          if (pathPart.startsWith('/')) pathPart = pathPart.slice(1)
-          try { pathPart = decodeURIComponent(pathPart.replace(/\//g, '\\')) } catch {}
-          return drive + ':' + pathPart
-        }
-
-        // 没有盘符
-        try { return decodeURIComponent(rest.replace(/\//g, '\\')) } catch {}
-        return rest.replace(/\//g, '\\')
-      }
-
-      // 非 file:// URI
-      if (uri.includes('/')) {
-        try { return decodeURIComponent(uri).replace(/\//g, '\\') } catch {}
-      }
-      return uri
-    }
-
     const kept = []
     for (const p of paths) {
-      const fsPath = uriToFileSystemPath(p)
+      const fsPath = this._uriToFileSystemPath(p)
       let exists = false
       try {
         exists = fs.existsSync(fsPath) && fs.statSync(fsPath).isDirectory()
@@ -116,6 +147,9 @@ window.services = {
    * @returns {Promise<boolean>} 是否删除成功
    */
   async deleteVSCodeHistory(dbPath, targetPath) {
+    if (!fs.existsSync(dbPath)) {
+      throw new Error(`数据库文件不存在: ${dbPath}`)
+    }
     const SQL = await this._initSQL()
     const db = new SQL.Database(fs.readFileSync(dbPath))
 
@@ -128,22 +162,12 @@ window.services = {
     }
 
     const data = JSON.parse(results[0].values[0].toString())
-    function uriToFileSystemPath(uri) {
-      if (!uri || typeof uri !== 'string') return uri
-      const match = uri.match(/^file:\/\/\/([A-Za-z]:)?(\/.*)?$/)
-      if (match) {
-        const drive = match[1] || ''
-        const pathPart = match[2] || ''
-        return drive + (pathPart.startsWith('/') ? pathPart.slice(1) : pathPart)
-      }
-      return uri
-    }
-    const normalizedTarget = uriToFileSystemPath(targetPath)
+    const normalizedTarget = this._uriToFileSystemPath(targetPath)
     const originalLength = data.entries.length
     data.entries = data.entries.filter((entry) => {
       if (typeof entry === 'string') return entry !== normalizedTarget
       const entryPath = entry.fileUri || entry.folderUri || entry.workspace?.configPath
-      return uriToFileSystemPath(entryPath) !== normalizedTarget
+      return this._uriToFileSystemPath(entryPath) !== normalizedTarget
     })
 
     if (data.entries.length === originalLength) {
@@ -168,6 +192,9 @@ window.services = {
    * @returns {Promise<number>} 删除成功的记录数
    */
   async deleteMultipleVSCodeHistory(dbPath, targetPaths) {
+    if (!fs.existsSync(dbPath)) {
+      throw new Error(`数据库文件不存在: ${dbPath}`)
+    }
     const SQL = await this._initSQL()
     const db = new SQL.Database(fs.readFileSync(dbPath))
 
@@ -180,22 +207,12 @@ window.services = {
     }
 
     const data = JSON.parse(results[0].values[0].toString())
-    function uriToFileSystemPath(uri) {
-      if (!uri || typeof uri !== 'string') return uri
-      const match = uri.match(/^file:\/\/\/([A-Za-z]:)?(\/.*)?$/)
-      if (match) {
-        const drive = match[1] || ''
-        const pathPart = match[2] || ''
-        return drive + (pathPart.startsWith('/') ? pathPart.slice(1) : pathPart)
-      }
-      return uri
-    }
-    const normalizedTargets = targetPaths.map(uriToFileSystemPath)
+    const normalizedTargets = targetPaths.map((p) => this._uriToFileSystemPath(p))
     const originalLength = data.entries.length
     data.entries = data.entries.filter((entry) => {
       if (typeof entry === 'string') return !normalizedTargets.includes(entry)
       const entryPath = entry.fileUri || entry.folderUri || entry.workspace?.configPath
-      return !normalizedTargets.includes(uriToFileSystemPath(entryPath))
+      return !normalizedTargets.includes(this._uriToFileSystemPath(entryPath))
     })
 
     const deletedCount = originalLength - data.entries.length
