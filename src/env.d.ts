@@ -21,6 +21,7 @@ interface Services {
   createDefaultIDE: (code: string, command: string) => IDEConfig
   parsePathEntry: (entry: any) => string
   createDBPath: (appName: string) => string
+  createSharedDBPath: (variant: 'vscode' | 'vscode-insiders') => string
   shellExec: (cmd: string, options?: { timeout?: number }) => Promise<string>
   getAllDbStorageKeys: (prefix?: string) => string[]
   getPath: (dir: string) => string

@@ -8,10 +8,11 @@ console.log('[services] preload loaded')
 // ==================== 路径处理工具函数 ====================
 
 /**
- * 检测是否为 Windows 路径（如 C:\xxx 或 C:/xxx）
+ * 检测是否为 Windows 路径（如 C:\xxx、C:/xxx 或 C:xxx）
+ * 兼容 VS Code 数据库中盘符后无分隔符的 URI 格式（如 file:///E:xxx → E:xxx）
  */
 function isWindowsPath(p) {
-  return typeof p === 'string' && /^[A-Za-z]:[\\/]/.test(p)
+  return typeof p === 'string' && /^[A-Za-z]:/.test(p)
 }
 
 /**
@@ -38,6 +39,11 @@ function uriToFileSystemPath(uri) {
       let pathPart = rest.slice(driveMatch[0].length)
       // 移除 pathPart 开头的 /
       if (pathPart.startsWith('/')) pathPart = pathPart.slice(1)
+      // 处理 pathPart 不为空但原始 URI 无盘符后分隔符的情况（如 file:///E:WeGameApps）
+      // 补充 \ 以保持有效 Windows 路径格式
+      if (pathPart && !pathPart.startsWith('/') && !pathPart.startsWith('\\')) {
+        pathPart = '/' + pathPart
+      }
       // 先尝试标准 decodeURIComponent（UTF-8 编码）
       let decoded
       try { decoded = decodeURIComponent(pathPart) } catch { decoded = pathPart }
@@ -175,6 +181,10 @@ window.services = {
         let drive = driveMatch[1].toUpperCase()
         let pathPart = rest.slice(driveMatch[0].length)
         if (pathPart.startsWith('/')) pathPart = pathPart.slice(1)
+        // 处理 pathPart 不为空但原始 URI 无盘符后分隔符的情况
+        if (pathPart && !pathPart.startsWith('/') && !pathPart.startsWith('\\')) {
+          pathPart = '/' + pathPart
+        }
         // 先尝试标准 decodeURIComponent（UTF-8 编码）
         let decoded
         try { decoded = decodeURIComponent(pathPart) } catch { decoded = pathPart }
@@ -493,6 +503,19 @@ window.services = {
     const relativePath = path.posix.join(appName || 'Code', 'User', 'globalStorage', 'state.vscdb')
     // 组合后统一转换为当前平台分隔符
     return (appDataPath + '/' + relativePath).replace(/\//g, path.sep)
+  },
+
+  /**
+   * 生成 1.118+ 版本共享存储数据库路径（跨平台兼容）
+   * @param {'vscode'|'vscode-insiders'} variant - IDE 变体
+   * @returns {string} 共享存储 state.vscdb 路径
+   */
+  createSharedDBPath(variant) {
+    const home = window.ztools.getPath('home')
+    const relativePath = variant === 'vscode'
+      ? path.posix.join('.vscode-shared', 'sharedStorage', 'state.vscdb')
+      : path.posix.join('.vscode-insiders-shared', 'sharedStorage', 'state.vscdb')
+    return path.join(home, relativePath).replace(/[\\\/]/g, path.sep)
   },
 
   // ==================== 工具函数 ====================

@@ -117,8 +117,17 @@ async function doSearch() {
   }
 }
 
+// 将 code 转换为显示名称
+function displayCode(code: string): string {
+  if (code === 'vscode-old') return 'VSCode (1.118-)'
+  if (code === 'vscode-new') return 'VSCode (1.118+)'
+  if (code === 'vscode-insiders-old') return 'Insider (1.118-)'
+  if (code === 'vscode-insiders-new') return 'Insider (1.118+)'
+  return code
+}
+
 function createSearchItem(path: string, services: any): SearchItem {
-  const decodedPath = services ? services._decodeURIPath(path) : path
+  const decodedPath = services ? services._uriToOSPath(path) : path
   const basename = decodedPath.split(/[\\/]/).pop() || decodedPath
   const isWorkspace = path.includes('.code-workspace')
   // 检查目录是否存在
@@ -168,7 +177,7 @@ function execCmd(cmd: string, _config: IDEConfig) {
 
 // 复制路径到剪贴板
 function copyPath(item: SearchItem) {
-  const osPath = item.decodedPath || (window.services ? window.services._uriToOSPath(item.path) : item.path)
+  const osPath = window.services ? window.services._uriToOSPath(item.path) : item.decodedPath || item.path
   const success = window.ztools.copyText(osPath)
   if (success) {
     window.ztools.showNotification(`已复制路径: ${item.title}`)
@@ -234,7 +243,7 @@ onUnmounted(() => {
         <div v-if="configs.length > 1" class="config-selector">
           <select v-model="selectedConfigIndex" @change="onConfigChange">
             <option v-for="(cfg, i) in configs" :key="cfg.code" :value="i">
-              {{ cfg.code }}
+              {{ displayCode(cfg.code) }}
             </option>
           </select>
         </div>
@@ -242,7 +251,7 @@ onUnmounted(() => {
           <input
             v-model="searchWord"
             type="text"
-            placeholder="输入关键词搜索项目"
+            placeholder="输入关键词搜索项目（注：VSCode/Insider 1.118+ 需重新配置 IDE）"
             class="search-input"
           />
         </div>

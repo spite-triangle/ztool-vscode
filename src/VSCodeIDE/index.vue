@@ -15,6 +15,15 @@ const newDatabase = ref('')
 const newTimeout = ref('10000')
 const errorMsg = ref('')
 
+// 将 code 转换为显示名称：将 -old/-new 后缀转为版本标识
+function displayCode(code: string): string {
+  if (code === 'vscode-old') return 'VSCode (1.118-)'
+  if (code === 'vscode-new') return 'VSCode (1.118+)'
+  if (code === 'vscode-insiders-old') return 'Insider (1.118-)'
+  if (code === 'vscode-insiders-new') return 'Insider (1.118+)'
+  return code
+}
+
 // 加载 IDE 列表
 function loadConfigs() {
   try {
@@ -51,9 +60,19 @@ function addIDE() {
 
     // 自动检测数据库路径
     if (!config.database) {
-      const appName = code === 'vscode' ? 'Code' : code === 'cursor' ? 'Cursor' : code === "vscode-insiders" ? "Code - Insiders" : ""
-      if (appName) {
-        config.database = window.services.createDBPath(appName)
+      // 1.118 及之后新版本：使用共享存储路径
+      if (code === 'vscode-new') {
+        config.database = window.services.createSharedDBPath('vscode')
+      } else if (code === 'vscode-insiders-new') {
+        config.database = window.services.createSharedDBPath('vscode-insiders')
+      }
+      // 1.118 之前旧版本：使用传统路径（由 createDefault 直接设置）
+      // 自定义 IDE：fallback 到传统路径
+      else {
+        const appName = code === 'vscode' ? 'Code' : code === 'cursor' ? 'Cursor' : code === 'vscode-insiders' ? 'Code - Insiders' : ''
+        if (appName) {
+          config.database = window.services.createDBPath(appName)
+        }
       }
     }
 
@@ -130,9 +149,15 @@ function saveEdit() {
 
 // 创建默认 IDE
 function createDefault(code: string, command: string) {
+  const trimmed = code.toLowerCase()
+  if (ideConfigs.value.some((c) => c.code === trimmed)) {
+    window.ztools.showNotification(`"${trimmed}" 已存在，请勿重复添加`)
+    return
+  }
+
   try {
     const config: IDEConfig = {
-      code,
+      code: trimmed,
       icon: '',
       terminal: '',
       command,
@@ -140,14 +165,26 @@ function createDefault(code: string, command: string) {
       timeout: '10000',
     }
 
-    const appName = code === 'vscode' ? 'Code' : code === 'cursor' ? 'Cursor' : code === 'vscode-insiders' ? "Code - Insiders": ""
-    if (appName) {
-      config.database = window.services.createDBPath(appName)
+    // 1.118 之前旧版本：使用传统 state.vscdb 路径
+    if (trimmed === 'vscode-old') {
+      config.database = window.services.createDBPath('Code')
+    } else if (trimmed === 'vscode-insiders-old') {
+      config.database = window.services.createDBPath('Code - Insiders')
+    }
+    // 1.118 及之后新版本：使用 .vscode-shared/sharedStorage/state.vscdb 路径
+    else if (trimmed === 'vscode-new') {
+      config.database = window.services.createSharedDBPath('vscode')
+    } else if (trimmed === 'vscode-insiders-new') {
+      config.database = window.services.createSharedDBPath('vscode-insiders')
+    }
+    // Cursor
+    else if (trimmed === 'cursor') {
+      config.database = window.services.createDBPath('Cursor')
     }
 
     saveIDEConfig(config)
     loadConfigs()
-    window.ztools.showNotification(`已创建默认配置: ${code}`)
+    window.ztools.showNotification(`已创建默认配置: ${trimmed}`)
   } catch (e: any) {
     window.ztools.showNotification('创建失败: ' + String(e.message ?? e ?? ''))
   }
@@ -179,13 +216,21 @@ onMounted(() => {
         </h3>
       </div>
       <div class="quick-actions">
-        <button class="btn btn-outline" @click="createDefault('vscode', 'code')">
+        <button class="btn btn-outline" @click="createDefault('vscode-old', 'code')">
           <span class="btn-icon">📘</span>
-          VSCode
+          VSCode (1.118-)
         </button>
-        <button class="btn btn-outline" @click="createDefault('vscode-insiders', 'code-insiders')">
+        <button class="btn btn-outline" @click="createDefault('vscode-new', 'code')">
           <span class="btn-icon">📘</span>
-          VSCode Insider
+          VSCode (1.118+)
+        </button>
+        <button class="btn btn-outline" @click="createDefault('vscode-insiders-old', 'code-insiders')">
+          <span class="btn-icon">📘</span>
+          Insider (1.118-)
+        </button>
+        <button class="btn btn-outline" @click="createDefault('vscode-insiders-new', 'code-insiders')">
+          <span class="btn-icon">📘</span>
+          Insider (1.118+)
         </button>
         <button class="btn btn-outline" @click="createDefault('cursor', 'cursor')">
           <span class="btn-icon">🔶</span>
@@ -278,7 +323,7 @@ onMounted(() => {
         </div>
         <div class="ide-info">
           <div class="ide-name-row">
-            <span class="ide-name">{{ cfg.code }}</span>
+            <span class="ide-name">{{ displayCode(cfg.code) }}</span>
           </div>
           <div class="ide-details">
             <span class="detail-item">
@@ -355,7 +400,7 @@ onMounted(() => {
             <button class="modal-close" @click="showDeleteConfirm = false">✕</button>
           </div>
           <div class="modal-body">
-            <p>确定要删除 IDE <strong>"{{ deletingCode }}"</strong> 的配置吗？</p>
+            <p>确定要删除 IDE <strong>"{{ displayCode(deletingCode) }}"</strong> 的配置吗？</p>
             <p class="modal-hint">此操作不可撤销。</p>
           </div>
           <div class="modal-footer">
@@ -463,6 +508,7 @@ onMounted(() => {
 
 .quick-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 14px 16px;
 }
