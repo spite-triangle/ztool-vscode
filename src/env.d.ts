@@ -30,6 +30,8 @@ interface Services {
   _uriToOSPath: (uri: string) => string
   _dirExists: (uri: string) => boolean
   _decodeURIPath: (uri: string) => string
+  _isRemoteURI: (uri: string) => boolean
+  _parseRemotePath: (uri: string) => string
   _osPathToURI: (osPath: string) => string
 }
 

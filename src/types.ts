@@ -26,6 +26,7 @@ export interface SearchItem {
   title: string
   isWorkspace: boolean
   isRemote: boolean
+  remoteAuthority?: string
   ext: string
   dirExists: boolean
 }

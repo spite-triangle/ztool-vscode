@@ -127,12 +127,14 @@ function displayCode(code: string): string {
 }
 
 function createSearchItem(path: string, services: any): SearchItem {
-  const decodedPath = services ? services._uriToOSPath(path) : path
+  const isRemote = services ? services._isRemoteURI(path) : false
+  const decodedPath = services
+    ? (isRemote ? services._parseRemotePath(path) : services._uriToOSPath(path))
+    : path
   const basename = decodedPath.split(/[\\/]/).pop() || decodedPath
   const isWorkspace = path.includes('.code-workspace')
-  // 检查目录是否存在
   const dirExists = services ? services._dirExists(path) : false
-  return { path, decodedPath, title: basename, isWorkspace, isRemote: path.includes('remote'), ext: '', dirExists }
+  return { path, decodedPath, title: basename, isWorkspace, isRemote, ext: '', dirExists }
 }
 
 // 打开项目

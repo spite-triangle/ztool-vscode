@@ -124,6 +124,38 @@ function decodeUTF16Component(str) {
   }
 }
 
+/**
+ * 判断 URI 是否为 VS Code 远程连接 URI
+ * @param {string} uri
+ * @returns {boolean}
+ */
+function isRemoteURI(uri) {
+  return typeof uri === 'string' && uri.startsWith('vscode-remote://')
+}
+
+/**
+ * 从 vscode-remote:// URI 中提取远程服务器上的文件系统路径
+ * 输入: vscode-remote://ssh-remote%2B192.168.1.100/home/user/project
+ * 输出: /home/user/project
+ * @param {string} uri
+ * @returns {string} 远程文件系统路径（解码后），解析失败返回原始 uri
+ */
+function parseRemotePath(uri) {
+  if (!uri || typeof uri !== 'string') return uri
+  try {
+    const url = new URL(uri)
+    let pathname = url.pathname
+    // 去除 pathname 末尾的 /
+    if (pathname.endsWith('/') && pathname.length > 1) {
+      pathname = pathname.slice(0, -1)
+    }
+    return decodeURIComponent(pathname)
+  } catch (err) {
+    console.warn('[services] parseRemotePath failed:', uri, err.message)
+    return uri
+  }
+}
+
 window.services = {
   // 读文件
   readFile(file) {
@@ -144,6 +176,8 @@ window.services = {
    */
   _uriToOSPath(uri) {
     if (!uri || typeof uri !== 'string') return uri
+    // 远程路径：提取服务器文件系统路径
+    if (isRemoteURI(uri)) return parseRemotePath(uri)
     // 复用 uriToFileSystemPath 并转换为 OS 路径格式
     const systemPath = uriToFileSystemPath(uri)
     // Windows 路径保持反斜杠，其他平台路径保持正斜杠
@@ -165,6 +199,9 @@ window.services = {
    */
   _decodeURIPath(uri) {
     if (!uri || typeof uri !== 'string') return uri
+
+    // 远程路径：直接提取服务器文件系统路径
+    if (isRemoteURI(uri)) return parseRemotePath(uri)
 
     // 检测是否为 Windows 路径
     const isWin = isWindowsPath(uri)
@@ -288,8 +325,8 @@ window.services = {
       } catch {
         exists = false
       }
-      // console.log('[services] path:', p, '-> fsPath:', fsPath, 'existsDir:', exists)
-      if (exists) kept.push(p)
+      // console.log('[services] path:', p, '-> fsPath:', fsPath, 'existsDir:', exists, 'isRemote:', isRemoteURI(p))
+      if (exists || isRemoteURI(p)) kept.push(p)
     }
 
     console.log('[services] final kept folders count:', kept.length)
@@ -565,6 +602,7 @@ window.services = {
    * 检查目录是否存在
    */
   _dirExists(uri) {
+    if (isRemoteURI(uri)) return true
     const fsPath = this._uriToFileSystemPath(uri)
     try {
       return fs.existsSync(fsPath) && fs.statSync(fsPath).isDirectory()
@@ -585,6 +623,20 @@ window.services = {
    */
   getConnectPath() {
     return window.ztools.getConnectPath()
+  },
+
+  /**
+   * 判断 URI 是否为 VS Code 远程连接 URI
+   */
+  _isRemoteURI(uri) {
+    return isRemoteURI(uri)
+  },
+
+  /**
+   * 从 vscode-remote:// URI 提取远程文件系统路径
+   */
+  _parseRemotePath(uri) {
+    return parseRemotePath(uri)
   },
 }
 
